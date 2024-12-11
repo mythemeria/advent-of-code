@@ -31,10 +31,7 @@ def blink(num, remaining):
   return child
 
 i = 30
-start = perf_counter_ns()
 rocks = sum([blink(x, i) for x in n2])
-end = perf_counter_ns()
-
-print(f'f({i + 1}) = {rocks} mine: {end - start} ns')
+print(f'f({i + 1}) = {rocks}')
 print(blink.cache_info())
 print(doBlink.cache_info())
