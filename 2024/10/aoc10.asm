@@ -3,11 +3,10 @@ section .data
   filename          db "testinput", 0
 
 section .bss
-  data_buf          resb 2049
-  buf_len           equ 2048
+  data_buf          resb 2048
+  buf_len           equ 1024
 
   data_len          resq 1
-  data_width        resq 1
 
 section .text
   global _start
@@ -29,9 +28,6 @@ _start:
   ; is the file valid?
   test rax, rax
   js error_exit
-
-  ; save file descriptor
-  mov rdi, rax
 
   ; read file
   mov rax, 0
@@ -101,9 +97,9 @@ find_first_digit:
 
 .digit_loop:
   cmp byte [rsi + rcx], 0x30
-  jl .below_0
+  jb .below_0
   cmp byte [rsi + rcx], 0x39
-  jle .done
+  jbe .done
   jmp .not_digit
 
 .below_0:
@@ -111,8 +107,8 @@ find_first_digit:
   jne .not_digit
 
 .possible_error:
-  cmp rcx, dword [data_len]
-  jle .not_digit
+  cmp rax, qword [data_len]
+  jbe .not_digit
   mov rsi, err_invalid_data
   jmp error_exit
   
@@ -124,30 +120,6 @@ find_first_digit:
   lea rsi, [rsi + rcx]
   pop rcx
   ret
-
-; in:
-; rsi = ptr to start of string
-; rcx = index to start counting backwards from
-; out:
-; rsi = ptr to first digit ('0'-'9') in string
-; rcx = index of last digit
-find_last_digit:
-  cmp byte [rsi - rcx], 0x30
-  jl .below_0
-  cmp byte [rsi - rcx], 0x39
-  jg .not_digit
-  ret
-
-.below_0:
-  cmp rcx, 0x0
-  jg .not_digit
-  mov rsi, err_invalid_data
-  jmp error_exit
-  
-.not_digit:
-  dec rcx
-  jmp find_last_digit
-
 
 ; iterate through the string and push all the '0' strings to the stack
 ; also grab the width while we're at it
@@ -166,13 +138,15 @@ find_zeroes:
 ; the first time this is reached it should be because it is a \n
 ; but there isn't a meaningful difference if it isn't so I'm not going to check
 .first_line_ended:
-  mov [data_width], rcx
+  push rcx
+  lea rdi, [rcx + rsi]
+  pop rcx
+
   lea rbx, [rel .next_character]
   jmp .next_character
 
 .found_zero:
   call climb_recursively
-  add rax, rdx
 
 .next_character:
   inc rcx
@@ -183,13 +157,56 @@ find_zeroes:
 ; can be called from any starting point!
 ; rsi = pointer to null-terminated string ([rsi - 1] = '\n')
 ; rcx = index into null-terminated string
-; returns 1 in rdx if it ended successfully (found a '9')
+; rdx = row width or 0
+; adds 1 in rdi if it ende  d successfully (found a '9')
 climb_recursively:
-  ; see if we can index up and down without going out of bounds
-  cmp rcx, data_width + 2
-  ja .check_up
-  cmp rcx, data_len - data_width
+  push rax
+  lea rax, [rsi + rcx]
+  cmp rax, 0x39
+  je .exit_success
+  ja .exit            ; prob redundant
+
+  ; rdx is 0 until we reach the end of the first row
+  cmp rdx, 0
+  jne .check_up
+  jmp .check_down
 
 .check_up:
+
+
+
+
+
+.check_down:
+  ; we might not be able to check down so check that
+  push rax
+  ; todo: check this is correct lol
+  lea rax, [rsi +]
+  cmp rax, data_len
+  cmp rsi + rcx, 
+  pop rax
+  cmp byte [rsi + rcx + rdx]
+
+
+; since the rows are separated by '\n', we don't need to check whether left and right are in range
+.check_left:
+  cmp byte [rsi + rcx - 1], [rsi + rcx] + 1
+  jne .check_right
+  mov rcx, rcx - 1
+  call climb_recursively
+  mov rcx, rcx + 1
+
+.check_right:
+  cmp byte [rsi + rcx + 1], [rsi + rcx] + 1
+  jne .exit
+  mov rcx, rcx + 1
+  call climb_recursively
+  mov rcx, rcx - 1
+
+.exit_success:
+  add rax, 1
+
+.exit:
+  ret
 
   
