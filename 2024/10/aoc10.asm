@@ -1,12 +1,15 @@
 section .data
   err_invalid_data  db "Error: Invalid data", 0
-  filename          db "testinput", 0
+  filename          db "input2", 0
 
 section .bss
   data_buf          resb 2048
-  buf_len           equ 1024
+  buf_len           equ 2048
 
   data_len          resq 1
+  end_ptr           resq 1
+
+  digit_ptrs        resd 1024
 
 section .text
   global _start
@@ -14,10 +17,6 @@ section .text
 ; note that the idea of this program is to be speedy. I'm making assumptions because I already know what the input looks like
 ; which is to say: this is NOT memory safe lmfao
 _start:
-  ; we actually want to start the string with something other than 0x30-0x39 because that's
-  ; my silly way of handling the check left of the top left position
-  mov byte [data_buf], 0x0a
-
   ; open file
   mov rax, 2               ; syscall number for sys_open (2)
   mov rdi, filename        ; pointer to the filename
@@ -29,9 +28,11 @@ _start:
   test rax, rax
   js error_exit
 
+  mov rdi, rax
+
   ; read file
   mov rax, 0
-  mov rsi, data_buf + 1
+  mov rsi, data_buf
   mov rdx, buf_len
   syscall
 
@@ -41,6 +42,8 @@ _start:
 
   ; store bytes read for later
   mov [data_len], rax
+  lea rax, [rax + rsi]
+  mov [end_ptr], rax
   
   ; Close the file
   mov rax, 3                    ; sys_close
@@ -128,6 +131,7 @@ find_zeroes:
   xor rdx, rdx
   xor rcx, rcx
   lea rbx, [rel .first_line_ended]   ; where we will jump when we encounter a newline
+  lea rax, [rel climb_recursively]
 
 .find_loop:
   cmp byte [rsi + rcx], 0x30
@@ -138,75 +142,82 @@ find_zeroes:
 ; the first time this is reached it should be because it is a \n
 ; but there isn't a meaningful difference if it isn't so I'm not going to check
 .first_line_ended:
-  push rcx
-  lea rdi, [rcx + rsi]
-  pop rcx
-
+  mov rdx, rcx
+  inc rdx
   lea rbx, [rel .next_character]
   jmp .next_character
 
 .found_zero:
-  call climb_recursively
+  push 0x30
+  lea rdi, [rsi + rcx]
+  push rdi
+  push rax
 
 .next_character:
   inc rcx
   cmp byte [rsi + rcx], 0x00
   jne .find_loop
+
+  xor rcx, rcx
   ret
 
-; can be called from any starting point!
-; rsi = pointer to null-terminated string ([rsi - 1] = '\n')
-; rcx = index into null-terminated string
-; rdx = row width or 0
-; adds 1 in rdi if it ende  d successfully (found a '9')
 climb_recursively:
+  pop rsi                     ; pointer to current grid position
+  pop rbx                     ; prev value
+
+  ; check in range
+  cmp rsi, qword [data_buf]
+  jae .end
+  cmp rsi, qword [end_ptr]
+  jg .end
+
+  ; check the number is one greater than prev
+  cmp bl, byte [rsi]
+  jne .end
+
+  ; check if this is the top
+  cmp byte [rsi], 0x39
+  je .top_reached
+
+  inc rbx
+
+  ; right
+  push rbx
+  mov rax, rsi
+  inc rax
   push rax
-  lea rax, [rsi + rcx]
-  cmp rax, 0x39
-  je .exit_success
-  ja .exit            ; prob redundant
-
-  ; rdx is 0 until we reach the end of the first row
-  cmp rdx, 0
-  jne .check_up
-  jmp .check_down
-
-.check_up:
-
-
-
-
-
-.check_down:
-  ; we might not be able to check down so check that
+  lea rax, [rel climb_recursively]
   push rax
-  ; todo: check this is correct lol
-  lea rax, [rsi +]
-  cmp rax, data_len
-  cmp rsi + rcx, 
-  pop rax
-  cmp byte [rsi + rcx + rdx]
+
+  ; left
+  push rbx
+  mov rax, rsi
+  dec rax
+  push rax
+  lea rax, [rel climb_recursively]
+  push rax
+
+  ; 
+  push rbx
+  mov rax, rsi
+  sub rax, rdx
+  push rax
+  lea rax, [rel climb_recursively]
+  push rax
 
 
-; since the rows are separated by '\n', we don't need to check whether left and right are in range
-.check_left:
-  cmp byte [rsi + rcx - 1], [rsi + rcx] + 1
-  jne .check_right
-  mov rcx, rcx - 1
-  call climb_recursively
-  mov rcx, rcx + 1
+  push rbx
+  mov rax, rsi
+  add rax, rdx
+  push rax
+  lea rax, [rel climb_recursively]
+  push rax
 
-.check_right:
-  cmp byte [rsi + rcx + 1], [rsi + rcx] + 1
-  jne .exit
-  mov rcx, rcx + 1
-  call climb_recursively
-  mov rcx, rcx - 1
+  jmp .end
 
-.exit_success:
-  add rax, 1
 
-.exit:
+.top_reached:
+  inc rcx
+
+.end:
   ret
-
-  
